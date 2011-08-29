@@ -14,7 +14,7 @@ static void base64_append(char **ou, int *line_count, char data)
         *line_count = 0;
     }
     *(*ou)++ = data;
-    (*line_count)++;
+    if (*line_count >= 0) (*line_count)++;
 }
 
 

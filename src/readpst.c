@@ -57,7 +57,7 @@ void      write_body_part(FILE* f_output, pst_string *body, char *mime, char *ch
 void      write_schedule_part_data(FILE* f_output, pst_item* item, const char* sender, const char* method);
 void      write_schedule_part(FILE* f_output, pst_item* item, const char* sender, const char* boundary);
 void      write_normal_email(FILE* f_output, char f_name[], pst_item* item, int mode, int mode_MH, pst_file* pst, int save_rtf, char** extra_mime_headers);
-void      write_vcard(FILE* f_output, pst_item *item, pst_item_contact* contact, char comment[]);
+void      write_vcard(FILE* f_output, pst_item *item, pst_item_contact* contact, pst_file *pf, char comment[]);
 int       write_extra_categories(FILE* f_output, pst_item* item);
 void      write_journal(FILE* f_output, pst_item* item);
 void      write_appointment(FILE* f_output, pst_item *item);
@@ -293,7 +293,7 @@ void process(pst_item *outeritem, pst_desc_tree *d_ptr)
                     if (mode == MODE_SEPARATE) mk_separate_file(&ff, (mode_EX) ? ".vcf" : "");
                     if (contact_mode == CMODE_VCARD) {
                         pst_convert_utf8_null(item, &item->comment);
-                        write_vcard(ff.output, item, item->contact, item->comment.str);
+                        write_vcard(ff.output, item, item->contact, &pstfile, item->comment.str);
                     }
                     else {
                         pst_convert_utf8(item, &item->contact->fullname);
@@ -1611,7 +1611,7 @@ void write_normal_email(FILE* f_output, char f_name[], pst_item* item, int mode,
 }
 
 
-void write_vcard(FILE* f_output, pst_item* item, pst_item_contact* contact, char comment[])
+void write_vcard(FILE* f_output, pst_item* item, pst_item_contact* contact, pst_file *pf, char comment[])
 {
     char*  result = NULL;
     size_t resultlen = 0;
@@ -1760,6 +1760,31 @@ void write_vcard(FILE* f_output, pst_item* item, pst_item_contact* contact, char
     if (comment)                        fprintf(f_output, "NOTE:%s\n",                      pst_rfc2426_escape(comment, &result, &resultlen));
     if (item->body.str)                 fprintf(f_output, "NOTE:%s\n",                      pst_rfc2426_escape(item->body.str, &result, &resultlen));
 
+    if (item->attach) {
+        fprintf(f_output, "PHOTO;ENCODING=b;TYPE=JPEG:\n");
+        // TODO this isn't guaranteed to be a contact picture
+        pst_binary data = pst_attach_to_mem(pf, item->attach);
+        // I patterned this off of a Gmail-compatible vcard-with-photo; I'm not sure 
+        // how magic this is, but it works so I don't care
+        if (data.data) {
+            int line_count = -1;
+            char *c = pst_base64_encode_multiple(data.data, data.size, &line_count);
+            if (c) {
+                char *line;
+                for (line = c; *line; ) {
+                    fputs(" ", f_output);
+                    int count;
+                    for (count = 72; count && *line; --count, ++line) {
+                        fputc(*line, f_output);
+                    }
+                    fputs("\n", f_output);
+                }
+                free(c);
+            }
+            free(data.data);
+        }
+    }
+    
     write_extra_categories(f_output, item);
 
     fprintf(f_output, "VERSION: 3.0\n");
